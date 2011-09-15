@@ -12,61 +12,7 @@
 
 #import "NSData+Base64.h"
 
-#ifndef USE_LIBXML
-//  if you wish to use LibXML, add USE_LIBXML=1 to "Precompiler Macros" in Project Info for all targets
-#   define USE_LIBXML 0
-#endif
-
-#if YAJL_AVAILABLE
-	#define API_FORMAT @"json"
-
-	#import "MGTwitterStatusesYAJLParser.h"
-	#import "MGTwitterMessagesYAJLParser.h"
-	#import "MGTwitterUsersYAJLParser.h"
-	#import "MGTwitterMiscYAJLParser.h"
-	#import "MGTwitterSearchYAJLParser.h"
-#elif TOUCHJSON_AVAILABLE
-	#define API_FORMAT @"json"
-
-	#import "MGTwitterTouchJSONParser.h"
-#else
-	#define API_FORMAT @"xml"
-
-	#if USE_LIBXML
-		#import "MGTwitterStatusesLibXMLParser.h"
-		#import "MGTwitterMessagesLibXMLParser.h"
-		#import "MGTwitterUsersLibXMLParser.h"
-		#import "MGTwitterMiscLibXMLParser.h"
-		#import "MGTwitterSocialGraphLibXMLParser.h"
-	#else
-		#import "MGTwitterStatusesParser.h"
-		#import "MGTwitterUsersParser.h"
-		#import "MGTwitterMessagesParser.h"
-		#import "MGTwitterMiscParser.h"
-		#import "MGTwitterSocialGraphParser.h"
-		#import "MGTwitterUserListsParser.h"
-	#endif
-#endif
-
-#define TWITTER_DOMAIN          @"api.twitter.com/1"
-
-#if YAJL_AVAILABLE || TOUCHJSON_AVAILABLE
-	#define TWITTER_SEARCH_DOMAIN	@"search.twitter.com"
-#endif
-#define HTTP_POST_METHOD        @"POST"
-#define MAX_MESSAGE_LENGTH      140 // Twitter recommends tweets of max 140 chars
-#define MAX_NAME_LENGTH			20
-#define MAX_EMAIL_LENGTH		40
-#define MAX_URL_LENGTH			100
-#define MAX_LOCATION_LENGTH		30
-#define MAX_DESCRIPTION_LENGTH	160
-
-#define DEFAULT_CLIENT_NAME     @"MGTwitterEngine"
-#define DEFAULT_CLIENT_VERSION  @"1.0"
-#define DEFAULT_CLIENT_URL      @"http://mattgemmell.com/source"
-#define DEFAULT_CLIENT_TOKEN	@"mgtwitterengine"
-
-#define URL_REQUEST_TIMEOUT     25.0 // Twitter usually fails quickly if it's going to fail at all.
+#import "MGTwitterEngineConfig.h"
 
 @interface NSDictionary (MGTwitterEngineExtensions)
 
@@ -133,7 +79,6 @@
 
 @implementation MGTwitterEngine
 
-
 #pragma mark Constructors
 
 
@@ -153,6 +98,7 @@
         _clientURL = [DEFAULT_CLIENT_URL retain];
 		_clientSourceToken = [DEFAULT_CLIENT_TOKEN retain];
 		_APIDomain = [TWITTER_DOMAIN retain];
+        _uploadDomain = [TWITTER_UPLOAD_DOMAIN retain];
 #if YAJL_AVAILABLE || TOUCHJSON_AVAILABLE
 		_searchDomain = [TWITTER_SEARCH_DOMAIN retain];
 #endif
@@ -249,6 +195,10 @@
 	return [[_APIDomain retain] autorelease];
 }
 
+- (NSString *)uploadDomain
+{
+	return [[_uploadDomain retain] autorelease];
+}
 
 - (void)setAPIDomain:(NSString *)domain
 {
@@ -257,6 +207,16 @@
 		_APIDomain = [TWITTER_DOMAIN retain];
 	} else {
 		_APIDomain = [domain retain];
+	}
+}
+
+- (void)setUploadDomain:(NSString *)domain
+{
+	[_uploadDomain release];
+	if (!domain || [domain length] == 0) {
+		_uploadDomain = [TWITTER_UPLOAD_DOMAIN retain];
+	} else {
+		_uploadDomain = [domain retain];
 	}
 }
 
@@ -2135,9 +2095,9 @@
 	[request setHTTPMethod:@"POST"];
 	
 	[request setParameters:[NSArray arrayWithObjects:
-							[OARequestParameter requestParameter:@"x_auth_mode" value:@"client_auth"],
-							[OARequestParameter requestParameter:@"x_auth_username" value:username],
-							[OARequestParameter requestParameter:@"x_auth_password" value:password],
+							[OARequestParameter requestParameterWithName:@"x_auth_mode" value:@"client_auth"],
+							[OARequestParameter requestParameterWithName:@"x_auth_username" value:username],
+							[OARequestParameter requestParameterWithName:@"x_auth_password" value:password],
 							nil]];		
 	
     // Create a connection using this request, with the default timeout and caching policy, 
@@ -2165,4 +2125,128 @@
 
 @end
 
+@implementation MGTwitterEngine (UpdateWithMedia)
+#define BOUNDARY @"b81141e2-424b-4a9c-a36b-38a2b1501adc"
 
+- (NSData *)multipartWithParameters:params andMedias:medias{
+    NSString *boundary = BOUNDARY;
+    
+    NSMutableData *body = [NSMutableData dataWithLength:0];
+    
+    for (id key in params) {
+        [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+        [body appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"\r\n\r\n", key] dataUsingEncoding:NSUTF8StringEncoding]];
+        [body appendData:[[NSString stringWithFormat:@"%@\r\n", [params objectForKey:key]] dataUsingEncoding:NSUTF8StringEncoding]];
+    }
+    
+    for (NSString *media in medias) {
+        [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+        [body appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"media[]\"; filename=\"%@\"\r\n", [media lastPathComponent]] dataUsingEncoding:NSUTF8StringEncoding]];
+        [body appendData:[[NSString stringWithFormat:@"Content-Type: image/%@\r\n", [media pathExtension] ] dataUsingEncoding:NSUTF8StringEncoding]];
+        [body appendData:[[NSString stringWithString:@"Content-Transfer-Encoding: binary\r\n\r\n"] dataUsingEncoding:NSUTF8StringEncoding]];
+        //[body appendData:[[NSString stringWithString:[UIImageJPEGRepresentation(image, 1.0) base64EncodingWithLineLength:0]] dataUsingEncoding:NSUTF8StringEncoding]];
+        //[body appendData:[[NSString stringWithString:[[NSData dataWithContentsOfFile:imageFilePath] base64EncodingWithLineLength:0]] dataUsingEncoding:NSUTF8StringEncoding]];
+        [body appendData:[NSData dataWithContentsOfFile:media]];
+        [body appendData:[[NSString stringWithString:@"\r\n"] dataUsingEncoding:NSUTF8StringEncoding]];
+
+    }
+    
+    [body appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+    return body;
+}
+
+- (NSString *)sendUpdate:(NSString *)status
+               withMedia:(NSString *)mediaFilePath
+               inReplyTo:(MGTwitterEngineID)updateID
+            withLatitude:(MGTwitterEngineLocationDegrees)latitude
+               longitude:(MGTwitterEngineLocationDegrees)longitude {
+    
+    if (!status || !mediaFilePath) {
+        return nil;
+    }
+    
+    NSString *path = [NSString stringWithFormat:@"statuses/update_with_media.%@", API_FORMAT];
+    if (_secureConnection) {
+        path = [NSString stringWithFormat:@"%@://%@/%@", @"https", _uploadDomain, path];
+    } else {
+        path = [NSString stringWithFormat:@"%@://%@/%@", @"http", _uploadDomain, path];
+    }
+    
+	// Convert the status to Unicode Normalized Form C to conform to Twitter's character counting requirement. See http://apiwiki.twitter.com/Counting-Characters .
+	NSString *trimmedText = [status precomposedStringWithCanonicalMapping];
+    if ([trimmedText length] > MAX_MESSAGE_LENGTH) {
+        trimmedText = [trimmedText substringToIndex:MAX_MESSAGE_LENGTH];
+    }
+    
+    NSMutableDictionary *params = [NSMutableDictionary dictionaryWithCapacity:0];
+    [params setObject:trimmedText forKey:@"status"];
+    if (updateID > 0) {
+        [params setObject:[NSString stringWithFormat:@"%llu", updateID] forKey:@"in_reply_to_status_id"];
+    }
+	if (latitude >= -90.0 && latitude <= 90.0 &&
+		longitude >= -180.0 && longitude <= 180.0) {
+		[params setObject:[NSString stringWithFormat:@"%.8f", latitude] forKey:@"lat"];
+		[params setObject:[NSString stringWithFormat:@"%.8f", longitude] forKey:@"long"];
+	}
+    
+    NSArray *medias = [NSArray arrayWithObjects:
+                       mediaFilePath,
+                       nil];
+	
+    NSData *body = [self multipartWithParameters:params andMedias:medias];
+    
+    OAMutableURLRequest *theRequest = [[[OAMutableURLRequest alloc] initWithURL:[NSURL URLWithString:path]
+                                                                       consumer:[[[OAConsumer alloc] initWithKey:[self consumerKey]
+                                                                                                          secret:[self consumerSecret]] autorelease] 
+                                                                          token:_accessToken 
+                                                                          realm: nil
+                                                              signatureProvider:nil] autorelease];
+    
+    NSString *boundary = BOUNDARY;
+    NSString *contentType = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary];
+    
+    [theRequest setHTTPMethod:@"POST"];
+    [theRequest setValue:contentType forHTTPHeaderField:@"Content-Type"];
+    [theRequest setHTTPShouldHandleCookies:NO];
+    
+    // Set headers for client information, for tracking purposes at Twitter.
+    [theRequest setValue:_clientName    forHTTPHeaderField:@"X-Twitter-Client"];
+    [theRequest setValue:_clientVersion forHTTPHeaderField:@"X-Twitter-Client-Version"];
+    [theRequest setValue:_clientURL     forHTTPHeaderField:@"X-Twitter-Client-URL"];
+    
+    
+    [theRequest setHTTPBody:body];
+    
+    // Create a connection using this request, with the default timeout and caching policy, 
+    // and appropriate Twitter request and response types for parsing and error reporting.
+    MGTwitterHTTPURLConnection *connection;
+    connection = [[MGTwitterHTTPURLConnection alloc] initWithRequest:theRequest 
+                                                            delegate:self 
+                                                         requestType:MGTwitterUpdateSendWithMediaRequest 
+                                                        responseType:MGTwitterStatus];
+    
+    if (!connection) {
+        return nil;
+    } else {
+        [_connections setObject:connection forKey:[connection identifier]];
+        [connection release];
+    }
+    
+    return [connection identifier];  
+}
+
+- (NSString *)sendUpdate:(NSString *)status withMedia:(NSString *)mediaFilePath {
+    return [self sendUpdate:status withMedia:mediaFilePath inReplyTo:0 withLatitude:DBL_MAX longitude:DBL_MAX];
+}
+
+- (NSString *)sendUpdate:(NSString *)status withMedia:(NSString *)mediaFilePath inReplyTo:(MGTwitterEngineID)updateID {
+    return [self sendUpdate:status withMedia:mediaFilePath inReplyTo:updateID withLatitude:DBL_MAX longitude:DBL_MAX];
+}
+
+- (NSString *)sendUpdate:(NSString *)status
+               withMedia:(NSString *)mediaFilePath
+            withLatitude:(MGTwitterEngineLocationDegrees)latitude
+               longitude:(MGTwitterEngineLocationDegrees)longitude {
+    return [self sendUpdate:status withMedia:mediaFilePath inReplyTo:0 withLatitude:latitude longitude:longitude];
+}
+@end

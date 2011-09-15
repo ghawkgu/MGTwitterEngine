@@ -23,6 +23,7 @@
     NSString *_clientURL;
     NSString *_clientSourceToken;
 	NSString *_APIDomain;
+    NSString *_uploadDomain;
 #if YAJL_AVAILABLE || TOUCHJSON_AVAILABLE
 	NSString *_searchDomain;
 #endif
@@ -56,7 +57,9 @@
 - (NSString *)clientSourceToken;
 - (void)setClientName:(NSString *)name version:(NSString *)version URL:(NSString *)url token:(NSString *)token;
 - (NSString *)APIDomain;
+- (NSString *)uploadDomain;
 - (void)setAPIDomain:(NSString *)domain;
+- (void)setUploadDomain:(NSString *)domain;
 #if YAJL_AVAILABLE || TOUCHJSON_AVAILABLE
 - (NSString *)searchDomain;
 - (void)setSearchDomain:(NSString *)domain;
@@ -271,4 +274,9 @@
 
 @end
 
-
+@interface MGTwitterEngine (UpdateWithMedia)
+- (NSString *)sendUpdate:(NSString *)status withMedia:(NSString *)mediaFilePath; // statuses/update_with_media
+- (NSString *)sendUpdate:(NSString *)status withMedia:(NSString *)mediaFilePath withLatitude:(MGTwitterEngineLocationDegrees)latitude longitude:(MGTwitterEngineLocationDegrees)longitude; // statuses/update_with_media
+- (NSString *)sendUpdate:(NSString *)status withMedia:(NSString *)mediaFilePath inReplyTo:(MGTwitterEngineID)updateID; // statuses/update_with_media
+- (NSString *)sendUpdate:(NSString *)status withMedia:(NSString *)mediaFilePath inReplyTo:(MGTwitterEngineID)updateID withLatitude:(MGTwitterEngineLocationDegrees)latitude longitude:(MGTwitterEngineLocationDegrees)longitude; // statuses/update_with_media
+@end
